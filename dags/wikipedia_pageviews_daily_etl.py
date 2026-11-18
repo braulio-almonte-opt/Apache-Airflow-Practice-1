@@ -45,8 +45,20 @@ def transformData(**kwargs):
 def loadData(**kwargs):
     data = kwargs["ti"].xcom_pull(task_ids="extract_task")
     df = pd.DataFrame(data, columns=["event_date", "wiki", "title", "total_views", "load_date"])
-    
-    pass
+    projectID = "mindful-braid-514312-p3"
+    datasetID = f"{projectID}.training"
+    client = bigquery.Client(project=projectID)
+    dataset = bigquery.Dataset(datasetID)
+    dataset.location = "US"
+    wikipediaTableID = f"{datasetID}.wikipedia_pageviews_daily" 
+    try:
+        client.create_dataset(dataset=dataset, exists_ok=True)
+        loadJob = client.load_table_from_dataframe(dataframe=df, destination=wikipediaTableID)
+        loadJob.result()
+    except:
+        return {"error":"failed to execute bigquery requests"}
+    else:
+        return "ok"
 
 with DAG(
     'wikipedia_dag',
@@ -67,10 +79,10 @@ with DAG(
         python_callable=transformData
     )
 
-    # load_task = PythonOperator(
-    #     task_id="python_task",
-    #     python_callable=loadData,
-    # )
+    load_task = PythonOperator(
+        task_id="load_task",
+        python_callable=loadData,
+    )
 
     # BigQueryCheckOperator_task = BigQueryCheckOperator(
     # task_id='BigQueryCheckOperator_task',
@@ -83,5 +95,5 @@ with DAG(
     # deferrable=False,
     # )
 
-extract_task >> transform_task
+extract_task >> transform_task >> load_task
 # extract_task >> transform_task >> load_task >> BigQueryCheckOperator_task 
