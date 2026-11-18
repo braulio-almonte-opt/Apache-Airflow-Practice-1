@@ -1,6 +1,6 @@
 ### Wikipedia Airflow Practice Task
 
-This task is divided into 3 subtasks
+This task is divided into 4 subtasks
 
 1. Extract yesterday's wikipedia articles.
 2. Transform to discard rows with null values.
