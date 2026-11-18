@@ -36,31 +36,42 @@ def queryData():
 def transformData(**kwargs):
     data = kwargs["ti"].xcom_pull(task_ids="extract_task")
     df = pd.DataFrame(data, columns=["event_date", "wiki", "title", "total_views"])
+    df.dropna(inplace=True) #running this first ensures that loadDateList iterates less times
     loadDateList = [datetime.datetime.today().strftime("%Y-%m-%d") for i in range(len(df))]
+    df["event_date"] = df["event_date"].astype(str)
     df.insert(4, "load_date", loadDateList, allow_duplicates=True)
-    df.dropna(inplace=True)
     df["wiki"] = df["wiki"].str.lower()
     df["title"] = df["title"].str.strip()
 
-    print(df.to_string())
-
-    # return df
+    return df
 
 def loadData(**kwargs):
-    data = kwargs["ti"].xcom_pull(task_ids="extract_task")
-    df = pd.DataFrame(data, columns=["event_date", "wiki", "title", "total_views", "load_date"])
+    df = kwargs["ti"].xcom_pull(task_ids="transform_task")
     projectID = os.getenv("GOOGLE_CLOUD_PROJECT_ID")
     datasetID = f"{projectID}.training"
     client = bigquery.Client(project=projectID)
     dataset = bigquery.Dataset(datasetID)
     dataset.location = "US"
-    wikipediaTableID = f"{datasetID}.wikipedia_pageviews_daily" 
+    wikipediaTableID = f"{datasetID}.wikipedia_pageviews_daily"
+
+    tableSchema = [
+        bigquery.SchemaField("event_date", "STRING"),
+        bigquery.SchemaField("wiki", "STRING"),  
+        bigquery.SchemaField("title", "STRING"),
+        bigquery.SchemaField("total_views", "INTEGER"),
+        bigquery.SchemaField("load_date", "STRING")
+    ]
+
+    tableJobConfig = bigquery.LoadJobConfig(
+        schema = tableSchema,
+        write_disposition = "WRITE_APPEND"
+    )
     try:
         client.create_dataset(dataset=dataset, exists_ok=True)
-        loadJob = client.load_table_from_dataframe(dataframe=df, destination=wikipediaTableID)
+        loadJob = client.load_table_from_dataframe(dataframe=df, destination=wikipediaTableID, job_config=tableJobConfig)
         loadJob.result()
-    except:
-        return {"error":"failed to execute bigquery requests"}
+    except Exception as e:
+        return {"error": e}
     else:
         return "ok"
 
