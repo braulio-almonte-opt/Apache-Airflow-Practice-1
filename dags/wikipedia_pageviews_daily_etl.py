@@ -10,6 +10,7 @@ import dotenv
 import os
 
 dotenv.load_dotenv()
+projectID = os.getenv("GOOGLE_CLOUD_PROJECT_ID")
 
 def queryData():
     client = bigquery.Client(project="mindful-braid-514312-p3")
@@ -38,7 +39,8 @@ def transformData(**kwargs):
     df = pd.DataFrame(data, columns=["event_date", "wiki", "title", "total_views"])
     df.dropna(inplace=True) #running this first ensures that loadDateList iterates less times
     loadDateList = [datetime.datetime.today().strftime("%Y-%m-%d") for i in range(len(df))]
-    df["event_date"] = df["event_date"].astype(str)
+    # df["event_date"] = df["event_date"].astype(str)
+    df["event_date"] = pd.to_datetime(df["event_date"]).dt.date
     df.insert(4, "load_date", loadDateList, allow_duplicates=True)
     df["wiki"] = df["wiki"].str.lower()
     df["title"] = df["title"].str.strip()
@@ -47,7 +49,6 @@ def transformData(**kwargs):
 
 def loadData(**kwargs):
     df = kwargs["ti"].xcom_pull(task_ids="transform_task")
-    projectID = os.getenv("GOOGLE_CLOUD_PROJECT_ID")
     datasetID = f"{projectID}.training"
     client = bigquery.Client(project=projectID)
     dataset = bigquery.Dataset(datasetID)
@@ -55,7 +56,7 @@ def loadData(**kwargs):
     wikipediaTableID = f"{datasetID}.wikipedia_pageviews_daily"
 
     tableSchema = [
-        bigquery.SchemaField("event_date", "STRING"),
+        bigquery.SchemaField("event_date", "DATE"),
         bigquery.SchemaField("wiki", "STRING"),  
         bigquery.SchemaField("title", "STRING"),
         bigquery.SchemaField("total_views", "INTEGER"),
@@ -99,16 +100,16 @@ with DAG(
         python_callable=loadData,
     )
 
-    # BigQueryCheckOperator_task = BigQueryCheckOperator(
-    # task_id='BigQueryCheckOperator_task',
-    # sql,
-    # gcp_conn_id='google_cloud_default',
-    # use_legacy_sql=True,
-    # location=None,
-    # impersonation_chain=None,
-    # labels=None,
-    # deferrable=False,
-    # )
-
-extract_task >> transform_task >> load_task
-# extract_task >> transform_task >> load_task >> BigQueryCheckOperator_task 
+    check_table_has_rows = BigQueryCheckOperator(
+        task_id="check_table_has_rows",
+        sql=f"SELECT COUNT(*) > 0 FROM `{projectID}.training.wikipedia_pageviews_daily` WHERE event_date = DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)",
+        use_legacy_sql=False,
+        project_id=projectID
+    )
+    """
+    Note: the task requested for all fields to be string except for total_views but query
+    provided for BigQueryCheckOperator could not calculate date using string format,
+    so I changed to schema to use DATE on event_date column
+    """
+    
+extract_task >> transform_task >> load_task >> check_table_has_rows
