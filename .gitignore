@@ -1,3 +1,5 @@
 test_dag.py
 testScript.py
 .venv
+.env
+!env.example

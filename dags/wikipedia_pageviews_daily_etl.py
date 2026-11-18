@@ -6,6 +6,10 @@ import pendulum
 import pandas as pd
 from google.cloud import bigquery
 import datetime
+import dotenv
+import os
+
+dotenv.load_dotenv()
 
 def queryData():
     client = bigquery.Client(project="mindful-braid-514312-p3")
@@ -45,7 +49,7 @@ def transformData(**kwargs):
 def loadData(**kwargs):
     data = kwargs["ti"].xcom_pull(task_ids="extract_task")
     df = pd.DataFrame(data, columns=["event_date", "wiki", "title", "total_views", "load_date"])
-    projectID = "mindful-braid-514312-p3"
+    projectID = os.getenv("GOOGLE_CLOUD_PROJECT_ID")
     datasetID = f"{projectID}.training"
     client = bigquery.Client(project=projectID)
     dataset = bigquery.Dataset(datasetID)
